@@ -5,11 +5,12 @@ mod service;
 use actix_cors::Cors;
 use actix_web::{App, HttpServer, web};
 use ble_connector::led_manager::LedBleManager;
-use service::utils::{get_env, get_parsed_env};
+use service::env::EnvSettings;
+
 #[actix_web::main]
 async fn main() -> Result<()> {
-    let led_manager = LedBleManager::new().await?;
-
+    let env_settings = EnvSettings::from_env();
+    let led_manager = LedBleManager::new(&env_settings).await?;
     HttpServer::new(move || {
         App::new()
             .wrap(
@@ -29,10 +30,7 @@ async fn main() -> Result<()> {
                     .route(web::post().to(controllers::set_single_color::controller)),
             )
     })
-    .bind((
-        get_env("WEB_ADDR").as_str(),
-        get_parsed_env::<u16>("WEB_PORT"),
-    ))?
+    .bind((env_settings.web_addr.as_str(), env_settings.web_port))?
     .run()
     .await?;
     Ok(())

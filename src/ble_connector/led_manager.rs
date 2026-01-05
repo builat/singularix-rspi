@@ -1,4 +1,3 @@
-use crate::service::utils::{get_env, get_parsed_env};
 use anyhow::{Result, anyhow};
 use bluer::Device;
 use bluer::gatt::remote::{Characteristic, Service};
@@ -6,19 +5,22 @@ use bluer::{Adapter, AdapterEvent, Address, Uuid};
 use futures::StreamExt;
 use tokio::time::{Duration, sleep};
 
+use crate::service::env::EnvSettings;
+
 #[derive(Clone)]
 pub struct LedBleManager {
     pub dev: Device,
     pub rx: Characteristic,
     pub _tx: Characteristic,
+    pub chunk_size: usize,
 }
 
 impl LedBleManager {
-    pub async fn new() -> Result<Self, anyhow::Error> {
-        let target_name = get_env("BLE_TARGET_NAME");
+    pub async fn new(env_settings: &EnvSettings) -> Result<Self, anyhow::Error> {
+        let target_name = &env_settings.ble_target_name;
         let session = bluer::Session::new().await?;
         let adapter = session.default_adapter().await?;
-        let svc_uuid = Uuid::parse_str(&get_env("BLE_SVC_UUID"))?;
+        let svc_uuid = Uuid::parse_str(&env_settings.ble_svc_uuid)?;
         adapter.set_powered(true).await?;
         println!("[BLE] Powering device: {}", adapter.name());
         let dev = Self::connect_with_retry(&adapter, &target_name, svc_uuid).await?;
@@ -26,11 +28,16 @@ impl LedBleManager {
 
         let svc = Self::find_service_by_uuid(&dev, svc_uuid).await?;
         let rx =
-            Self::find_char_by_uuid(&svc, Uuid::parse_str(&get_env("BLE_RX_UUID_STR"))?).await?;
+            Self::find_char_by_uuid(&svc, Uuid::parse_str(&env_settings.ble_rx_uuid_str)?).await?;
         let _tx =
-            Self::find_char_by_uuid(&svc, Uuid::parse_str(&get_env("BLE_TX_UUID_STR"))?).await?;
+            Self::find_char_by_uuid(&svc, Uuid::parse_str(&env_settings.ble_tx_uuid_str)?).await?;
 
-        Ok(LedBleManager { dev, rx, _tx })
+        Ok(LedBleManager {
+            dev,
+            rx,
+            _tx,
+            chunk_size: env_settings.ble_chunk_size,
+        })
     }
 
     pub async fn is_connected(&self) -> bool {
@@ -128,7 +135,7 @@ impl LedBleManager {
         Err(anyhow!("[BLE] Characteristic {} not found", target))
     }
     pub async fn write_chunks(&self, data: &[u8]) -> Result<()> {
-        for chunk in data.chunks(get_parsed_env::<usize>("BLE_CHUNK_SIZE")) {
+        for chunk in data.chunks(self.chunk_size) {
             let _ = &self.rx.write(chunk).await?;
             sleep(Duration::from_millis(10)).await;
         }
