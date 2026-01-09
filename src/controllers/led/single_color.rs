@@ -1,6 +1,5 @@
-use actix_web::{HttpRequest, HttpResponse, error::HttpError, web};
-
 use crate::ble_connector::led_manager::LedBleManager;
+use actix_web::{HttpRequest, HttpResponse, error::HttpError, web};
 
 #[derive(serde::Deserialize)]
 pub struct Body {
