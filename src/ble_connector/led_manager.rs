@@ -1,11 +1,13 @@
+use crate::ble_connector::ble_response_converter::parse_arduino_resp;
+use crate::service::env::EnvSettings;
 use anyhow::{Result, anyhow};
 use bluer::Device;
 use bluer::gatt::remote::{Characteristic, Service};
 use bluer::{Adapter, AdapterEvent, Address, Uuid};
 use futures::StreamExt;
+use futures::pin_mut;
+use tokio::sync::broadcast;
 use tokio::time::{Duration, sleep};
-
-use crate::service::env::EnvSettings;
 
 #[derive(Clone)]
 pub struct LedBleManager {
@@ -13,6 +15,7 @@ pub struct LedBleManager {
     pub rx: Characteristic,
     pub _tx: Characteristic,
     pub chunk_size: usize,
+    pub events_tx: tokio::sync::broadcast::Sender<String>,
 }
 
 impl LedBleManager {
@@ -31,13 +34,29 @@ impl LedBleManager {
             Self::find_char_by_uuid(&svc, Uuid::parse_str(&env_settings.ble_rx_uuid_str)?).await?;
         let _tx =
             Self::find_char_by_uuid(&svc, Uuid::parse_str(&env_settings.ble_tx_uuid_str)?).await?;
+        let (ev_tx, _rx) = broadcast::channel::<String>(256);
 
+        let notif = _tx.notify().await?;
+        let tx_events = ev_tx.clone();
+        tokio::spawn(async move {
+            pin_mut!(notif);
+            while let Some(val) = notif.next().await {
+                let json = parse_arduino_resp(&val);
+                let _ = tx_events.send(json.unwrap_or_else(|| "err.malformed-json".to_string()));
+            }
+            let _ = tx_events.send("status:notify-ended".to_string());
+        });
         Ok(LedBleManager {
             dev,
             rx,
             _tx,
+            events_tx: ev_tx,
             chunk_size: env_settings.ble_chunk_size,
         })
+    }
+
+    pub fn subscribe(&self) -> tokio::sync::broadcast::Receiver<String> {
+        self.events_tx.subscribe()
     }
 
     pub async fn is_connected(&self) -> bool {
