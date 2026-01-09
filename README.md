@@ -88,5 +88,5 @@ resp = [status, cmd, detail]
 status: 0x00=ok, 0x01=err
 detail: 0x00=none, 0x01=unknown, 0x02=bad_args, 0x03=range, 0x04=internal
 
-cmd:    0x03=paint, 0x10=color_full, 0x12=rainbow, etc.
+cmd:    0x01=rainbow, 0x03=paint, 0x04=color_full etc.
 ```

@@ -35,7 +35,7 @@ fn cmd_name(b: u8) -> &'static str {
         0x01 => "rainbow",
         0x02 => "-reserved-",
         0x03 => "set range",
-        0x10 => "set rgb",
+        0x04 => "set rgb",
         0x11 => "switch off",
         0x12 => "-reserved-",
         _ => "unknown",
