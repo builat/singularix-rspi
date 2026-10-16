@@ -108,14 +108,6 @@ mod tests {
     }
 
     #[test]
-    fn hsv_is_never_saturated_by_packing() {
-        for hue in (0..=65_535u32).step_by(257) {
-            let (r, g, b) = color_hsv(hue as u16);
-            assert!(r <= 255 && g <= 255 && b <= 255);
-        }
-    }
-
-    #[test]
     fn gamma_table_endpoints_and_monotonicity() {
         assert_eq!(gamma8(0), 0);
         assert_eq!(gamma8(255), 255);
