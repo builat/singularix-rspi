@@ -23,6 +23,8 @@ pub fn color_hsv(hue: u16) -> (u8, u8, u8) {
             r = 255;
             g = hue;
         } else {
+            // 510, not 255: hue is in [255, 510) here, so 255 - hue would
+            // underflow (panics in debug, garbage colors in release).
             r = 510 - hue;
             g = 255;
         }

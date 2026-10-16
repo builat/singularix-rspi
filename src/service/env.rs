@@ -11,6 +11,7 @@ pub struct EnvSettings {
     pub led_color_order: ColorOrder,
     pub led_spi_device: String,
     pub led_spi_speed_hz: u32,
+    pub led_rainbow_speed: u16,
 }
 
 impl EnvSettings {
@@ -37,6 +38,10 @@ impl EnvSettings {
                 .ok()
                 .and_then(|v| v.parse::<u32>().ok())
                 .unwrap_or(3_200_000),
+            led_rainbow_speed: env::var("LED_RAINBOW_SPEED")
+                .ok()
+                .and_then(|v| v.parse::<u16>().ok())
+                .unwrap_or(180),
         }
     }
 }

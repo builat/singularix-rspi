@@ -25,6 +25,13 @@ All notable changes to this project will be documented in this file.
   the `spi` group).
 - Unit tests for the protocol quirks, color math, SPI encoding, and engine
   state machine.
+- Raspberry Pi cross-compile target: `scripts/build-pi.sh` produces the
+  aarch64 Linux binary (glibc 2.17 baseline) from any host using zig cc
+  and llvm-ar; toolchain pinned in `rust-toolchain.toml`, linker/CC/AR
+  wired in `.cargo/config.toml`. Optional `PI_HOST` deploys over scp.
+- Startup check that the SPI frame fits the spidev transfer buffer
+  (4096 bytes by default; strips above ~339 LEDs need `spidev.bufsiz`
+  raised) with an actionable error instead of per-render failures.
 
 ### Removed
 - BLE backend (`bluer`, `libdbus-sys`), UUID/chunk env settings, and the

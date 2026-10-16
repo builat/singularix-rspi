@@ -1,0 +1,6 @@
+# Rust toolchain for this repo. The extra target is the Raspberry Pi 4
+# cross-compile target used by scripts/build-pi.sh; rustup installs it
+# automatically.
+[toolchain]
+channel = "stable"
+targets = ["aarch64-unknown-linux-gnu"]

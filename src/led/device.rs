@@ -68,6 +68,8 @@ pub struct NullDevice {
 }
 
 impl NullDevice {
+    // Test/no-op path only; unused in a Linux release build.
+    #[cfg_attr(all(not(test), target_os = "linux"), allow(dead_code))]
     pub fn new() -> Self {
         NullDevice {
             last_frame: Vec::new(),
@@ -131,11 +133,39 @@ impl SpiWs2812 {
             .max_speed_hz(speed_hz)
             .mode(SpiModeFlags::SPI_MODE_0);
         dev.configure(&options)?;
+        check_spidev_bufsiz(frame_len(led_count))?;
         Ok(SpiWs2812 {
             dev,
             order,
-            buf: Vec::with_capacity(led_count * 12 + LATCH_BYTES),
+            buf: Vec::with_capacity(frame_len(led_count)),
         })
+    }
+}
+
+/// Total SPI bytes pushed per frame: 12 encoded bytes per LED + latch.
+#[cfg(target_os = "linux")]
+fn frame_len(led_count: usize) -> usize {
+    led_count * 12 + LATCH_BYTES
+}
+
+#[cfg(target_os = "linux")]
+fn check_spidev_bufsiz(frame_bytes: usize) -> Result<()> {
+    let bufsiz = match std::fs::read_to_string("/sys/module/spidev/parameters/bufsiz") {
+        Ok(s) => s.trim().parse::<usize>().unwrap_or(0),
+        Err(_) => return Ok(()), // unreadable: can't tell, let writes speak
+    };
+    if frame_bytes > bufsiz {
+        Err(anyhow::anyhow!(
+            "the SPI frame ({frame_bytes} bytes) does not fit the spidev transfer \
+             buffer ({bufsiz} bytes) — every write would fail with 'Message too long'. \
+             Enlarge it to e.g. 32768 and reboot: if spidev is built in, append \
+             'spidev.bufsiz=32768' to the kernel command line in \
+             /boot/firmware/cmdline.txt (or /boot/cmdline.txt on older releases); \
+             if it is a module (listed in /proc/modules), create \
+             /etc/modprobe.d/spidev.conf with 'options spidev bufsiz=32768'"
+        ))
+    } else {
+        Ok(())
     }
 }
 
@@ -151,7 +181,16 @@ impl LedDevice for SpiWs2812 {
             }
         }
         self.buf.resize(self.buf.len() + LATCH_BYTES, 0);
-        self.dev.write_all(&self.buf)?;
+        if let Err(e) = self.dev.write_all(&self.buf) {
+            if e.raw_os_error() == Some(90) {
+                return Err(anyhow::anyhow!(
+                    "frame ({} bytes) exceeds the spidev transfer buffer \
+                     (spidev.bufsiz) — see the README section on large strips",
+                    self.buf.len()
+                ));
+            }
+            return Err(e.into());
+        }
         Ok(())
     }
 
@@ -160,8 +199,6 @@ impl LedDevice for SpiWs2812 {
     }
 }
 
-/// Opens the LED output for this platform: the SPI device on Linux, a
-/// no-op sink anywhere else (dev machines).
 pub fn open(
     path: &str,
     speed_hz: u32,

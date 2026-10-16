@@ -1,0 +1,15 @@
+#!/bin/sh
+# Archiver for the aarch64 cross build: llvm-ar writes GNU archives with a
+# proper symbol index for the ELF objects produced by zig cc (macOS's own
+# ar writes a BSD archive that lld cannot link).
+set -eu
+
+if command -v llvm-ar >/dev/null 2>&1; then
+    exec llvm-ar "$@"
+fi
+for p in /opt/homebrew/opt/llvm/bin/llvm-ar /usr/local/opt/llvm/bin/llvm-ar; do
+    [ -x "$p" ] && exec "$p" "$@"
+done
+
+echo "error: llvm-ar not found — install it with: brew install llvm" >&2
+exit 1

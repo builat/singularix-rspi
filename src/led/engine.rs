@@ -1,10 +1,3 @@
-/*!
-    LED render engine: a dedicated thread that owns the framebuffer, the
-    brightness/rainbow state and the output device. It replaces the Arduino
-    firmware's loop() — commands are applied immediately, and while the
-    rainbow is enabled a frame is rendered every 45 ms.
-*/
-
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender, channel};
@@ -44,9 +37,7 @@ impl LedEngineHandle {
     }
 }
 
-/// Spawns the engine thread. `device` is the opened LED output (SPI on the
-/// Pi, a no-op sink on dev machines).
-pub fn spawn(device: Box<dyn LedDevice>, led_count: usize) -> LedEngineHandle {
+pub fn spawn(device: Box<dyn LedDevice>, led_count: usize, rainbow_speed: u16) -> LedEngineHandle {
     let (tx, rx) = channel::<Parsed>();
     let (events, _) = broadcast::channel::<String>(256);
     let alive = Arc::new(AtomicBool::new(true));
@@ -57,6 +48,7 @@ pub fn spawn(device: Box<dyn LedDevice>, led_count: usize) -> LedEngineHandle {
         .name("led-engine".to_string())
         .spawn(move || {
             let mut state = EngineState::new(device, led_count);
+            state.rainbow_speed = rainbow_speed;
             run(&mut state, &rx, &events_thread);
             alive_thread.store(false, Ordering::Relaxed);
         })
@@ -69,11 +61,13 @@ fn run(state: &mut EngineState, rx: &Receiver<Parsed>, events: &broadcast::Sende
     state.render(); // boot: latch the strip dark, like strip.begin() + show()
     let _ = events.send("status:engine-started".to_string());
     println!(
-        "[LED] engine started: {} LEDs, boot brightness {BOOT_BRIGHTNESS}",
-        state.pixels.len()
+        "[LED] engine started: {} LEDs, boot brightness {BOOT_BRIGHTNESS}, rainbow speed {}",
+        state.pixels.len(),
+        state.rainbow_speed
     );
 
     let mut last_tick = Instant::now();
+    let mut warned_at: Option<Instant> = None;
     loop {
         let timeout = FRAME_INTERVAL.saturating_sub(last_tick.elapsed());
         match rx.recv_timeout(timeout) {
@@ -82,8 +76,17 @@ fn run(state: &mut EngineState, rx: &Receiver<Parsed>, events: &broadcast::Sende
             Err(RecvTimeoutError::Disconnected) => break,
         }
         if last_tick.elapsed() >= FRAME_INTERVAL {
+            let period = last_tick.elapsed();
             last_tick = Instant::now();
             if state.rainbow {
+                if period > FRAME_INTERVAL + Duration::from_millis(10)
+                    && warned_at.map_or(true, |t| t.elapsed() >= Duration::from_secs(5))
+                {
+                    eprintln!(
+                        "[LED] frame gap: {period:?} since the previous frame (expected ~45 ms)"
+                    );
+                    warned_at = Some(Instant::now());
+                }
                 state.rainbow_frame();
             }
         }
@@ -91,8 +94,6 @@ fn run(state: &mut EngineState, rx: &Receiver<Parsed>, events: &broadcast::Sende
     let _ = events.send("status:engine-stopped".to_string());
 }
 
-/// All mutable LED state. Kept separate from the thread plumbing so the
-/// firmware behavior can be unit-tested with a NullDevice.
 pub struct EngineState {
     device: Box<dyn LedDevice>,
     /// Raw (pre-brightness) colors, one [r, g, b] per LED.
@@ -102,6 +103,9 @@ pub struct EngineState {
     brightness: u8,
     rainbow: bool,
     rainbow_offset: u16,
+    /// Hue step per frame; 180 matches the Arduino firmware, 0 freezes
+    /// the wheel (frames keep streaming — diagnostic mode).
+    pub rainbow_speed: u16,
 }
 
 impl EngineState {
@@ -113,12 +117,22 @@ impl EngineState {
             brightness: BOOT_BRIGHTNESS,
             rainbow: false,
             rainbow_offset: 0,
+            rainbow_speed: RAINBOW_SPEED,
         }
     }
 
-    /// One command: apply the firmware's stop-rainbow rule, run the command,
-    /// broadcast the ACK.
     pub fn handle(&mut self, parsed: Parsed, events: &broadcast::Sender<String>) {
+        println!(
+            "[LED] command: id {} ({}), status {}, detail {}",
+            parsed.cmd_code,
+            parsed
+                .command
+                .as_ref()
+                .map(|c| format!("{c:?}"))
+                .unwrap_or_else(|| "rejected".to_string()),
+            parsed.status,
+            parsed.detail
+        );
         if parsed.stops_rainbow {
             self.rainbow = false;
         }
@@ -189,14 +203,9 @@ impl EngineState {
             self.pixels[i] = [r, g, b];
         }
         self.render();
-        self.rainbow_offset = self.rainbow_offset.wrapping_add(RAINBOW_SPEED);
+        self.rainbow_offset = self.rainbow_offset.wrapping_add(self.rainbow_speed);
     }
 
-    /// Writes the framebuffer to the device, scaled by the global
-    /// brightness. The scaling matches Adafruit_NeoPixel's setPixelColor
-    /// `(c * brightness) >> 8` with the stored value = brightness + 1
-    /// (0 means "no scaling"); unlike the library's in-place rescale this
-    /// keeps the raw colors, so raising brightness back restores them.
     fn render(&mut self) {
         let stored = self.brightness.wrapping_add(1);
         for (o, px) in self.out.iter_mut().zip(&self.pixels) {
@@ -427,7 +436,7 @@ mod tests {
 
     #[test]
     fn spawned_engine_applies_commands_and_shuts_down() {
-        let handle = super::spawn(Box::new(NullDevice::new()), 4);
+        let handle = super::spawn(Box::new(NullDevice::new()), 4, 180);
         assert!(handle.is_alive());
         let mut sse = handle.subscribe();
         let mut shutdown = handle.subscribe();

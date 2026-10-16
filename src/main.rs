@@ -19,7 +19,11 @@ async fn main() -> Result<()> {
     .context(
         "failed to open the LED output — is SPI enabled (raspi-config) and the wire on GPIO 10?",
     )?;
-    let engine_handle = engine::spawn(device, env_settings.led_count);
+    let engine_handle = engine::spawn(
+        device,
+        env_settings.led_count,
+        env_settings.led_rainbow_speed,
+    );
 
     HttpServer::new(move || {
         App::new()

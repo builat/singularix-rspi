@@ -35,6 +35,26 @@ Notes:
   the wire must be on the SPI MOSI pin.
 - A ~1000 µF capacitor across the strip's 5 V input is recommended.
 
+### Strips longer than ~340 LEDs
+
+Each frame is 12 SPI bytes per LED plus a latch, and the spidev kernel
+driver's transfer buffer defaults to 4096 bytes — a whole frame must fit in
+one transfer (splitting it would latch the pixels mid-frame). Above ~339
+LEDs, enlarge the buffer to 32768 and reboot:
+
+```bash
+# spidev built into the kernel (usual case on Raspberry Pi OS):
+sudo sed -i '1s/$/ spidev.bufsiz=32768/' /boot/firmware/cmdline.txt   # Bookworm
+#                                             /boot/cmdline.txt       # Bullseye and older
+# spidev as a module instead (if `grep -w spidev /proc/modules` prints a line):
+echo 'options spidev bufsiz=32768' | sudo tee /etc/modprobe.d/spidev.conf
+sudo reboot
+```
+
+The server checks the buffer at startup and refuses to run with a frame
+that would not fit, explaining this fix. 32768 bytes covers strips up to
+~2700 LEDs.
+
 ## Setup (on the Pi)
 
 1. Enable SPI and give your user access:
@@ -48,6 +68,9 @@ Notes:
 2. Build and configure:
 
    ```bash
+   # from your dev machine (see "Cross-compiling for the Pi" below):
+   scripts/build-pi.sh
+   # — or directly on the Pi:
    cargo build --release
    cp .env_example .env       # adjust LED_COUNT / LED_COLOR_ORDER if needed
    ```
@@ -68,10 +91,14 @@ LED_COUNT=274                    # LEDs on the strip (firmware used 274)
 LED_COLOR_ORDER=brg              # wire byte order: rgb/rbg/grb/gbr/brg/bgr
 LED_SPI_DEVICE=/dev/spidev0.0    # SPI device (MOSI = GPIO 10)
 LED_SPI_SPEED_HZ=3200000         # 4 x the 800 kHz WS2812 bit rate
+LED_RAINBOW_SPEED=180            # hue step per 45 ms frame; 0 = frozen wheel (still streams)
 ```
 
 All `LED_*` values are optional and default to the values above. If colors
 look swapped, try a different `LED_COLOR_ORDER` (most strips are `grb`).
+Set `LED_COUNT` to the **actual** strip length: oversizing it wastes frame
+time (12 SPI bytes per LED) and long transfers can glitch the strip
+(visible blinking) — see "Strips longer than ~340 LEDs" below.
 
 ## API
 
@@ -130,3 +157,27 @@ cmd:    0x00=off, 0x01=rainbow, 0x03=set range, 0x04=set rgb, 0x05=brightness, 0
 
 `cargo test` and `cargo check` work on any machine — the SPI device code is
 compiled only on Linux; elsewhere the server runs with a no-op LED sink.
+
+### Cross-compiling for the Pi
+
+`scripts/build-pi.sh` builds the aarch64 Linux release binary from any
+machine (tested from macOS). One-time prerequisites:
+
+```bash
+brew install zig llvm   # zig cc is the cross C compiler/linker; llvm-ar archives
+```
+
+plus rustup (the `aarch64-unknown-linux-gnu` target is installed
+automatically via `rust-toolchain.toml`). Then:
+
+```bash
+scripts/build-pi.sh                                   # build only
+PI_HOST=pi@raspberrypi scripts/build-pi.sh            # build + scp + restart service
+```
+
+The binary targets a glibc 2.17 baseline, so it runs on every Raspberry Pi
+OS release. The wiring lives in `.cargo/config.toml` (linker + CC/AR env)
+and `scripts/zigcc-aarch64` / `scripts/ar-aarch64`; plain
+`cargo build --release --target aarch64-unknown-linux-gnu` works too when
+the toolchain providing that target is the active one.
+
