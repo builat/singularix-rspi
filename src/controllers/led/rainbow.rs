@@ -1,11 +1,12 @@
 use actix_web::{HttpRequest, HttpResponse, error::HttpError, web};
 
-use crate::ble_connector::led_manager::LedBleManager;
+use crate::led::engine::LedEngineHandle;
+use crate::led::protocol;
 
 pub async fn controller(
     _req: HttpRequest,
-    ble: web::Data<LedBleManager>,
+    engine: web::Data<LedEngineHandle>,
 ) -> Result<HttpResponse, HttpError> {
-    let _ = ble.write_chunks(format!("1").as_bytes()).await;
+    engine.send(protocol::rainbow());
     Ok(HttpResponse::Ok().body("rainbow set"))
 }

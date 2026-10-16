@@ -1,4 +1,5 @@
-use crate::ble_connector::led_manager::LedBleManager;
+use crate::led::engine::LedEngineHandle;
+use crate::led::protocol;
 use actix_web::{HttpRequest, HttpResponse, error::HttpError, web};
 
 #[derive(serde::Deserialize)]
@@ -11,10 +12,9 @@ pub struct Body {
 pub async fn controller(
     _req: HttpRequest,
     payload: web::Json<Body>,
-    ble: web::Data<LedBleManager>,
+    engine: web::Data<LedEngineHandle>,
 ) -> Result<HttpResponse, HttpError> {
     let Body { r, g, b } = payload.into_inner();
-    let color_setter = format!("4 {} {} {}\n", r, g, b);
-    let _ = ble.write_chunks(color_setter.as_bytes()).await;
+    engine.send(protocol::color(r, g, b));
     Ok(HttpResponse::Ok().body("Color set"))
 }

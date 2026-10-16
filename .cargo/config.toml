@@ -1,0 +1,12 @@
+# Cross-compilation for the Raspberry Pi (aarch64 Linux) from any host.
+#
+# `scripts/build-pi.sh` is the entry point; it routes cargo through rustup
+# and calls `cargo build --release --target aarch64-unknown-linux-gnu`.
+# The zig cc wrapper compiles/links the C dependency (zstd) and the binary;
+# llvm-ar archives it (see scripts/ar-aarch64).
+[target.aarch64-unknown-linux-gnu]
+linker = "scripts/zigcc-aarch64"
+
+[env]
+CC_aarch64_unknown_linux_gnu = { value = "scripts/zigcc-aarch64", relative = true }
+AR_aarch64_unknown_linux_gnu = { value = "scripts/ar-aarch64", relative = true }
