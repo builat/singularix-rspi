@@ -1,14 +1,16 @@
 use actix_web::{HttpRequest, HttpResponse, error::HttpError, web};
 
-use crate::ble_connector::led_manager::LedBleManager;
+use crate::led::engine::LedEngineHandle;
+use crate::led::protocol;
 /*
-    Controller for debugging sending raw text and translate it directly to the LED strip over BLE interface.
+    Controller for debugging: accepts a raw firmware command line
+    (e.g. `4 255 0 0`) and parses it exactly like the Arduino did.
 */
 pub async fn controller(
     _req: HttpRequest,
     payload: String,
-    ble: web::Data<LedBleManager>,
+    engine: web::Data<LedEngineHandle>,
 ) -> Result<HttpResponse, HttpError> {
-    let _ = ble.write_chunks(payload.as_bytes()).await;
+    engine.send(protocol::parse_ascii(payload.trim()));
     Ok(HttpResponse::Ok().body("Text sent"))
 }

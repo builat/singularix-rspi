@@ -1,5 +1,6 @@
 pub mod brightness;
 pub mod events;
+pub mod off;
 pub mod rainbow;
 pub mod range;
 pub mod send_text;

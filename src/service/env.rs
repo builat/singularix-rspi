@@ -1,15 +1,16 @@
 use dotenvy::dotenv;
 use std::env;
 
+use crate::led::device::ColorOrder;
+
 #[derive(Clone)]
 pub struct EnvSettings {
     pub web_addr: String,
     pub web_port: u16,
-    pub ble_target_name: String,
-    pub ble_chunk_size: usize,
-    pub ble_svc_uuid: String,
-    pub ble_rx_uuid_str: String,
-    pub ble_tx_uuid_str: String,
+    pub led_count: usize,
+    pub led_color_order: ColorOrder,
+    pub led_spi_device: String,
+    pub led_spi_speed_hz: u32,
 }
 
 impl EnvSettings {
@@ -21,14 +22,21 @@ impl EnvSettings {
                 .expect("WEB_PORT not set")
                 .parse::<u16>()
                 .expect("WEB_PORT must be a valid u16"),
-            ble_target_name: env::var("BLE_TARGET_NAME").expect("BLE_TARGET_NAME not set"),
-            ble_chunk_size: env::var("BLE_CHUNK_SIZE")
-                .expect("BLE_CHUNK_SIZE not set")
-                .parse::<usize>()
-                .expect("BLE_CHUNK_SIZE must be a valid usize"),
-            ble_svc_uuid: env::var("BLE_SVC_UUID").expect("BLE_SVC_UUID not set"),
-            ble_rx_uuid_str: env::var("BLE_RX_UUID_STR").expect("BLE_RX_UUID_STR not set"),
-            ble_tx_uuid_str: env::var("BLE_TX_UUID_STR").expect("BLE_TX_UUID_STR not set"),
+            // LED_* settings default to the values the Arduino firmware used.
+            led_count: env::var("LED_COUNT")
+                .ok()
+                .and_then(|v| v.parse::<usize>().ok())
+                .filter(|&n| n > 0)
+                .unwrap_or(274),
+            led_color_order: env::var("LED_COLOR_ORDER")
+                .ok()
+                .and_then(|v| ColorOrder::parse(&v))
+                .unwrap_or_default(),
+            led_spi_device: env::var("LED_SPI_DEVICE").unwrap_or_else(|_| "/dev/spidev0.0".into()),
+            led_spi_speed_hz: env::var("LED_SPI_SPEED_HZ")
+                .ok()
+                .and_then(|v| v.parse::<u32>().ok())
+                .unwrap_or(3_200_000),
         }
     }
 }

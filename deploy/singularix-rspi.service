@@ -1,0 +1,16 @@
+[Unit]
+Description=Singularix LED server (WS2812 over SPI)
+After=network.target
+
+[Service]
+# Adjust to the user the server runs as; it needs access to /dev/spidev0.0
+# (spi group). WorkingDirectory is where .env is read from.
+User=pi
+SupplementaryGroups=spi gpio
+WorkingDirectory=/opt/singularix-rspi
+ExecStart=/opt/singularix-rspi/singularix-rspi
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
